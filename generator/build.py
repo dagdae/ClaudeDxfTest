@@ -11,14 +11,9 @@ OUT_PDF = os.path.join(ROOT, "output", "pdf")
 
 
 def sheets():
-    import f01am_s01_audio
-    mods = [f01am_s01_audio]
-    for name in ("f01am_s02_network", "f01am_s03_muting", "f01am_s04_power", "b01am_s01_interface"):
-        try:
-            mods.append(__import__(name))
-        except ModuleNotFoundError:
-            pass
-    return mods
+    import b01am_rack
+    import f01am_rack
+    return [f01am_rack, b01am_rack]
 
 
 def main(png_dir=None):
@@ -28,7 +23,7 @@ def main(png_dir=None):
     records = []
     for m in sheets():
         sh = m.build()
-        fname = f"{sh.code}_S{sh.sheet_no}_{sh.title.replace(' / ', '_').replace(' ', '-')}.dxf"
+        fname = f"{sh.code}_{sh.title.replace(' / ', '_').replace(' ', '-')}.dxf"
         path = os.path.join(OUT_DXF, fname)
         sh.save(path)
         built.append((sh, path))

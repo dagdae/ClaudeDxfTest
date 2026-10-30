@@ -406,7 +406,7 @@ class Sheet:
     # ----------------------------------------------------------------- device
     def device(self, x, ytop, w, brand, model, func, tag, left=(), right=(),
                icon=None, partial=False, header=12.0, pad=4.0, min_h=0.0,
-               bottom=None, title_h=2.2, tag_lines=None, note=None):
+               bottom=None, title_h=2.2, tag_lines=None, note=None, spacing=2.0):
         """Draw a device box. Port spec: dict(id, label, conn=None, g='M', pins=None,
         gap=0.0). Returns dict id -> Port."""
         lay = "AV-DEVICE-REF" if partial else "AV-DEVICE"
@@ -416,7 +416,7 @@ class Sheet:
             t = 0.0
             for i, sp in enumerate(specs):
                 ph = len(sp["pins"]) * PIN if sp.get("pins") else SINGLE_H
-                t += sp.get("gap", 0.0) + ph + (2.0 if i else 0.0)
+                t += sp.get("gap", 0.0) + ph + (spacing if i else 0.0)
             return t
 
         body = max(col_h(left), col_h(right), min_h)
@@ -442,7 +442,7 @@ class Sheet:
             for sp in specs:
                 pins = sp.get("pins")
                 ph = len(pins) * PIN if pins else SINGLE_H
-                yy -= sp.get("gap", 0.0) + (0.0 if first else 2.0)
+                yy -= sp.get("gap", 0.0) + (0.0 if first else spacing)
                 first = False
                 yc = yy - ph / 2
                 xe = x if side == "L" else x + w
@@ -482,35 +482,61 @@ class Sheet:
         return ports
 
     # --------------------------------------------------------- terminal block
+    def knife(self, x, yc, layer="AV-TB"):
+        """Disconnect (knife) symbol inside a terminal cell starting at x."""
+        self.circle((x + 1.0, yc), 0.35, layer)
+        self.circle((x + 4.0, yc), 0.35, layer)
+        self.line((x + 1.3, yc + 0.15), (x + 3.6, yc + 1.15), layer)
+
     def terminal_block(self, x, ytop, name, terms, w=15.0, title_side="T", sec="2.5"):
-        """terms: list of dict(id, sec=None, pe=False, gap=0, note=None, note_side='R').
-        Returns dict id -> (Pin left, Pin right)."""
+        """terms: list of dict(id, sec=None, pe=False, disc=False, levels=1, gap=0, note=None,
+        notes=None, note_side='R').
+        Returns id -> (Pin left, Pin right) for 1-level terminals, or
+        id -> [(Pin left, Pin right), ...] (top level first) for multi-level terminals."""
         res = {}
         y = ytop
-        if title_side == "T":
+        if name and title_side == "T":
             self.text(name, x + w / 2, ytop + 1.6, 2.6, "BC", "AV-TEXT-DEV")
         for t in terms:
             y -= t.get("gap", 0.0)
-            y0 = y - PIN
+            n = t.get("levels", 1)
+            hh = n * PIN
+            y0 = y - hh
             pe = t.get("pe", False)
-            self.rect(x, y0, w, PIN, "AV-TB")
+            self.rect(x, y0, w, hh, "AV-TB")
             self.line((x + 5.0, y0), (x + 5.0, y), "AV-TB")
             if pe:
-                self.hatch_rect(x + 5.0, y0, w - 5.0, PIN, "AV-TB", rgb=(0, 150, 0), pattern="ANSI31", scale=0.25)
-            self.text(t.get("sec", sec), x + 2.5, y0 + PIN / 2, 1.0, "MC", "AV-TB")
-            self.text(t["id"], x + 5.0 + (w - 5.0) / 2, y0 + PIN / 2, 1.3, "MC", "AV-TB",
-                      rgb=(0, 0, 0) if not pe else None)
-            yc = y0 + PIN / 2
-            self.dot((x - 0.8, yc), 0.55, "AV-TB")
-            self.dot((x + w + 0.8, yc), 0.55, "AV-TB")
-            self.line((x - 0.8, yc), (x - 2.0, yc), "AV-TB")
-            self.line((x + w + 0.8, yc), (x + w + 2.0, yc), "AV-TB")
-            if t.get("note"):
-                if t.get("note_side", "R") == "R":
-                    self.text(t["note"], x + w + 2.6, yc + 0.9, 1.1, "BL", "AV-NOTE")
+                self.hatch_rect(x + 5.0, y0, w - 5.0, hh, "AV-TB", rgb=(0, 150, 0), pattern="ANSI31", scale=0.25)
+            levels = []
+            notes = t.get("notes") or ([t.get("note")] if t.get("note") else [])
+            side = t.get("note_side", "R")
+            for k in range(n):
+                yc = y - PIN * (k + 0.5)
+                if k > 0:
+                    self.line((x, y - PIN * k), (x + 5.0, y - PIN * k), "AV-TB")
+                    self.line((x + 5.0, y - PIN * k), (x + 6.2, y - PIN * k), "AV-TB")
+                    self.line((x + w - 1.2, y - PIN * k), (x + w, y - PIN * k), "AV-TB")
+                if t.get("disc"):
+                    self.knife(x, yc)
+                elif n > 1:
+                    self.text(str(k + 1), x + 2.5, yc, 1.0, "MC", "AV-TB")
                 else:
-                    self.text(t["note"], x - 2.6, yc + 0.9, 1.1, "BR", "AV-NOTE")
-            res[t["id"]] = (Pin(x - 2.0, yc, -1, t["id"]), Pin(x + w + 2.0, yc, 1, t["id"]))
+                    self.text(t.get("sec", sec), x + 2.5, yc, 1.0, "MC", "AV-TB")
+                self.dot((x - 0.8, yc), 0.55, "AV-TB")
+                self.dot((x + w + 0.8, yc), 0.55, "AV-TB")
+                self.line((x - 0.8, yc), (x - 2.0, yc), "AV-TB")
+                self.line((x + w + 0.8, yc), (x + w + 2.0, yc), "AV-TB")
+                if k < len(notes) and notes[k]:
+                    if side == "R":
+                        self.text(notes[k], x + w + 2.6, yc + 0.9, 1.1, "BL", "AV-NOTE")
+                    else:
+                        self.text(notes[k], x - 2.6, yc + 0.9, 1.1, "BR", "AV-NOTE")
+                levels.append((Pin(x - 2.0, yc, -1, t["id"]), Pin(x + w + 2.0, yc, 1, t["id"])))
+            self.text(t["id"], x + 5.0 + (w - 5.0) / 2, y0 + hh / 2, 1.3, "MC", "AV-TB",
+                      rgb=(0, 0, 0) if not pe else None)
+            if n > 1:
+                self.text(f"{n}L {t.get('sec', sec)}", x + 5.0 + (w - 5.0) / 2, y0 + 0.5, 0.8, "BC", "AV-NOTE")
+            res[t["id"]] = levels if n > 1 else levels[0]
             y = y0
         res["_bottom"] = y
         return res
@@ -647,6 +673,18 @@ class Sheet:
             self.records.append(rec)
         return pts
 
+    def field_end(self, x, y, side, descr, above, below, h=1.85):
+        """Field cable termination text (21xRWxx style) at the free end (x, y) of a trunk.
+        side 'L': field on the left of the rack; 'R': field on the right."""
+        if side == "L":
+            self.mtext_lines(descr, x - 1.5, y, 1.3, "MR", gap=1.45)
+            self.text(above, x + 2.0, y + 0.9, h, "BL", "AV-TEXT")
+            self.text(below, x + 2.0, y - 0.9, h, "TL", "AV-TEXT")
+        else:
+            self.mtext_lines(descr, x + 1.5, y, 1.3, "ML", gap=1.45)
+            self.text(above, x - 2.0, y + 0.9, h, "BR", "AV-TEXT")
+            self.text(below, x - 2.0, y - 0.9, h, "TR", "AV-TEXT")
+
     def wire(self, pts, layer="W-AUDIO"):
         self.pline(self.ortho(pts), layer)
 
@@ -701,13 +739,12 @@ class Sheet:
                     (x + 1.8, m - 3.5)], layer)
 
     # -------------------------------------------------------------- sheet frame
-    def frame(self, info: dict):
+    def frame(self, info: dict, nc=12, nr=8):
         W, H = self.W, self.H
         self.rect(0, 0, W, H, "AV-ZONE", lw=13)
         x0, y0, x1, y1 = 20.0, 10.0, W - 10.0, H - 10.0
         self.rect(x0, y0, x1 - x0, y1 - y0, "AV-FRAME")
         # zone grid
-        nc, nr = 12, 8
         cw, rh = (x1 - x0) / nc, (y1 - y0) / nr
         for i in range(nc + 1):
             xx = x0 + i * cw
@@ -721,7 +758,7 @@ class Sheet:
             self.line((x1, yy), (x1 + 4, yy), "AV-ZONE")
             self.line((x0, yy), (x0 - 4, yy), "AV-ZONE")
         for j in range(nr):
-            ch = "ABCDEFGH"[j]
+            ch = "ABCDEFGHJKLMNP"[j]
             self.text(ch, x1 + 2.0, y1 - (j + 0.5) * rh, 2.2, "MC", "AV-ZONE", rgb=(120, 0, 255))
             self.text(ch, x0 - 2.0, y1 - (j + 0.5) * rh, 2.2, "MC", "AV-ZONE", rgb=(120, 0, 255))
         self._title_block(x0, y0, x1, info)
